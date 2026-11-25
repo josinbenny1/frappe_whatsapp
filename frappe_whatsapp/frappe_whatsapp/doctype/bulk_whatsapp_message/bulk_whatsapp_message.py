@@ -14,6 +14,19 @@ from frappe.model.naming import make_autoname
 # Save this as a Python file in your app's folder: 
 # frappe_whatsapp/frappe_whatsapp/doctype/bulk_whatsapp_message/bulk_whatsapp_message.py
 
+def _parse_recipient_data(value) -> dict:
+    """Return recipient_data as a dict; blank, invalid or non-object values become {}."""
+    if isinstance(value, dict):
+        return value
+    if not isinstance(value, str) or not value.strip():
+        return {}
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
 class BulkWhatsAppMessage(Document):
     def autoname(self):
         self.name = make_autoname("BULK-WA-.YYYY.-.#####")
@@ -77,13 +90,9 @@ class BulkWhatsAppMessage(Document):
         
         # Replace variables in the message if any
         self.status == "In Progress"
-        if recipient.get("recipient_data"):
-            try:
-                variables = json.loads(recipient.get("recipient_data", "{}"))
-                # for var_name, var_value in variables.items():
-                #     message_content = message_content.replace(f"{{{{{var_name}}}}}", str(var_value))
-            except Exception as e:
-                frappe.log_error(f"Error parsing recipient data: {str(e)}", "WhatsApp Bulk Messaging")
+        recipient_data = _parse_recipient_data(recipient.get("recipient_data"))
+        # for var_name, var_value in recipient_data.items():
+        #     message_content = message_content.replace(f"{{{{{var_name}}}}}", str(var_value))
         
         # Create WhatsApp message
         wa_message = frappe.new_doc("WhatsApp Message")
@@ -91,7 +100,7 @@ class BulkWhatsAppMessage(Document):
         wa_message.to = recipient.get("mobile_number")
         wa_message.message_type = "Text"
         # wa_message.message = message_content
-        wa_message.flags.custom_ref_doc = json.loads(recipient.get("recipient_data", "{}"))
+        wa_message.flags.custom_ref_doc = recipient_data
         wa_message.bulk_message_reference = self.name
         if self.whatsapp_account:
             wa_message.whatsapp_account = self.whatsapp_account
@@ -104,7 +113,7 @@ class BulkWhatsAppMessage(Document):
             # Handle template variables if needed
 
             if recipient.get("recipient_data") and self.variable_type=='Unique':
-                wa_message.body_param = recipient.get("recipient_data")
+                wa_message.body_param = json.dumps(recipient_data)
             elif self.template_variables and self.variable_type=='Common':
                 wa_message.body_param = self.template_variables
             if self.attach:
@@ -115,11 +124,46 @@ class BulkWhatsAppMessage(Document):
         try:
             wa_message.insert(ignore_permissions=True)
         except Exception:
+            self.log_message_failure(recipient)
+            self.record_failed_message(wa_message, recipient)
             self.db_set("status", "Partially Failed")
         # Update message count
         self.db_set("sent_count", cint(self.sent_count) + 1)
         if self.recipient_count == self.sent_count:
             self.db_set("status", "Completed")
+
+    def log_message_failure(self, recipient):
+        """Log the current exception against this bulk message"""
+        # Plain traceback: the one with local variables would include request headers
+        frappe.log_error(
+            title=f"Bulk WhatsApp message failed: {self.name}",
+            message=f"Bulk WhatsApp Message: {self.name}\n"
+            f"Mobile number: {recipient.get('mobile_number')}\n\n{frappe.get_traceback()}",
+            reference_doctype=self.doctype,
+            reference_name=self.name,
+        )
+
+    def record_failed_message(self, wa_message, recipient):
+        """Store the message as Failed so that the progress counters include it"""
+        try:
+            if wa_message.name and frappe.db.exists("WhatsApp Message", wa_message.name):
+                wa_message.db_set("status", "Failed")
+                return
+
+            wa_message.status = "Failed"
+            if wa_message.message_type == "Text":
+                # "Text" is not an option of message_type, the record could not be saved later
+                wa_message.message_type = "Manual"
+            if wa_message.body_param:
+                # body_param is a JSON column, invalid JSON would be rejected
+                try:
+                    json.loads(wa_message.body_param)
+                except (TypeError, ValueError):
+                    wa_message.body_param = None
+            # db_insert, not insert: WhatsApp Message.before_insert would send it again
+            wa_message.db_insert()
+        except Exception:
+            self.log_message_failure(recipient)
 
     def retry_failed(self):
         """Retry failed messages"""

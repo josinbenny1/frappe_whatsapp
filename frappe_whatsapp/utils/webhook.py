@@ -106,7 +106,7 @@ def post():
 				}).insert(ignore_permissions=True)
 			elif message_type in ["image", "audio", "video", "document"]:
 				token = whatsapp_account.get_password("token")
-				url = f"{whatsapp_account.url}/{whatsapp_account.version}/"
+				url = f"{(whatsapp_account.url or '').rstrip('/')}/{whatsapp_account.version}/"
 
 				media_id = message[message_type]["id"]
 				headers = {

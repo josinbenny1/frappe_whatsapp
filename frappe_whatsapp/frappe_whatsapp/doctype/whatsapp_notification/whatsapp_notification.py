@@ -248,7 +248,7 @@ class WhatsAppNotification(Document):
         try:
             success = False
             response = make_post_request(
-                f"{whatsapp_account.url}/{whatsapp_account.version}/{whatsapp_account.phone_id}/messages",
+                f"{(whatsapp_account.url or '').rstrip('/')}/{whatsapp_account.version}/{whatsapp_account.phone_id}/messages",
                 headers=headers, data=json.dumps(data)
             )
 

@@ -222,7 +222,7 @@ class WhatsAppMessage(Document):
         }
         try:
             response = make_post_request(
-                f"{whatsapp_account.url}/{whatsapp_account.version}/{whatsapp_account.phone_id}/messages",
+                f"{(whatsapp_account.url or '').rstrip('/')}/{whatsapp_account.version}/{whatsapp_account.phone_id}/messages",
                 headers=headers,
                 data=json.dumps(data),
             )
@@ -269,7 +269,7 @@ class WhatsAppMessage(Document):
         }
         try:
             response = make_post_request(
-                f"{settings.url}/{settings.version}/{settings.phone_id}/messages",
+                f"{(settings.url or '').rstrip('/')}/{settings.version}/{settings.phone_id}/messages",
                 headers=headers,
                 data=json.dumps(data),
             )

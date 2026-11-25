@@ -204,7 +204,7 @@ class WhatsAppTemplates(Document):
         """Get whatsapp settings."""
         settings = frappe.get_doc("WhatsApp Account", self.whatsapp_account)
         self._token = settings.get_password("token")
-        self._url = settings.url
+        self._url = (settings.url or '').rstrip('/')
         self._version = settings.version
         self._business_id = settings.business_id
         self._app_id = settings.app_id
@@ -258,7 +258,7 @@ def fetch():
     for account in whatsapp_accounts:
         # get credentials
         token = frappe.get_doc("WhatsApp Account", account.name).get_password("token")
-        url = account.url
+        url = (account.url or '').rstrip('/')
         version = account.version
         business_id = account.business_id
 
